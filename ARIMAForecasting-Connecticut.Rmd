@@ -1,0 +1,197 @@
+---
+title: "HW2"
+author: "Meghana S Kanthadai"
+date: "2024-01-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# install.packages("forecast")
+# install.packages("readxl")
+library(forecast)
+library(readxl)
+library(dplyr)
+library("tseries")
+
+rm(list=ls(all=TRUE)) 	# clear data
+```
+
+##  Deliverables for HW 2
+Loading the dataset. 
+Note: The dataset starts from Jan22 .
+```{r}
+options(scipen = 999) # turn off scientific notation
+# Read the data
+covid_data <- read_excel("C:/Users/meghs/Downloads/2020_Covid_Data.xlsx")
+
+#Covid Data of Particular State
+ct_data <- covid_data$CT # ---------------------------> #replace with your state
+
+#The dataset contains values starting from Jan22 hence 345
+ct_data <- ct_data[1:345]
+length(ct_data)
+ct_data
+```
+
+# 1. Step-by-Step fit different ARIMA (p,d,q) x (P, D, Q) for the confirmed cases. Can you discover a better model than auto.arima?
+
+Convert data to time series object and plot it
+```{r}
+# Create a time series object using a simple numeric sequence as the time index
+ct_ts <- ts(ct_data, start= c(2020,1,22), frequency=345)# Starts from the date Jan 22
+ct_ts
+## see what would happen if we don't use the whole historical data? e.g. starts from 2020.8, 2023.8,...?
+
+ct_ts
+plot.ts(ct_ts) # plot time series first
+
+```
+# ARIMA models
+Auto ARIMA model
+```{r}
+#Fit the auto.arima model
+
+auto_fit <- auto.arima(ct_ts)
+summary(auto_fit)
+
+# Series: ct_ts 
+# ARIMA(2,2,2) 
+# 
+# Coefficients:
+#          ar1      ar2      ma1     ma2
+#       0.3824  -0.2181  -1.6356  0.7939
+# s.e.  0.0693   0.0621   0.0506  0.0472
+# 
+# sigma^2 = 673855:  log likelihood = -2787.9
+# AIC=5585.8   AICc=5585.98   BIC=5604.99
+# 
+# Training set error measures:
+#                    ME     RMSE     MAE      MPE     MAPE MASE        ACF1
+# Training set 40.15631 813.7172 388.816 2.684823 3.321913  NaN -0.01221406
+
+```
+
+# Step-by-Step
+# 2. Select the best model using information criteria (AIC_c, BIC), and present out-of-sample forecasts with prediction intervals
+```{r}
+## Step 1. Is the time series stationary? 
+
+# Use Augmented Dickey-Fuller Test to test stationary
+adf.test(ct_ts)				# if p-value is large (> 0.10), then non stationary
+y1 <- diff(ct_ts, differences = 1)			
+plot.ts(y1)		# looks stationary visually
+adf.test(y1)	# p-value is large
+y2 <- diff(ct_ts, differences = 2)	
+plot.ts(y2)		# looks stationary visually
+adf.test(y2)	# estimated p = 0.01 => small p-value (< 0.10) => so yd is stationary ==> fix d = 2 in ARIMA models to be fitted  -----> here my p value is 0.01
+
+
+## Step 2. Decide AR(p) or MA(q) or both ARMA(p,q).
+Pacf(y2, lag.max = 40) # PACF suggest p=4
+Acf(y2, lag.max = 40)	#ACF suggest q=6
+
+
+# # nearby models Arima, d = 2;p->1,2,3 d-->2 q-->1,2,3
+# Create a list to store models and their BIC values
+models <- list()
+bic_values <- numeric()
+
+# Define the range of p, d, and q
+p_values <- 1:3
+d_value <- 2
+q_values <- 1:3
+
+# Iterate over all combinations of p, d, q
+for (p in p_values) {
+  for (q in q_values) {
+    model <- Arima(ct_ts, order = c(p, d_value, q))
+    model_name <- paste("ARIMA(", p, ",", d_value, ",", q, ")", sep = "")
+    models[[model_name]] <- model
+    bic_values[model_name] <- BIC(model)
+  }
+}
+
+# Print the summaries and BIC of all models
+for (model_name in names(models)) {
+  cat("Model:", model_name, "\n")
+  print(summary(models[[model_name]]))
+  cat("BIC:", bic_values[model_name], "\n\n")
+}
+
+# Identify the model with the lowest BIC
+best_model_name <- names(which.min(bic_values))
+best_model <- models[[best_model_name]]
+cat("Model with the lowest BIC:\n")
+cat(best_model_name, "\n")
+print(summary(best_model))
+
+
+# predict best_model
+y_hat <- predict(best_model)
+y_hat
+
+```
+
+# 3. Discover a set of good models in the neighborhood of the best model. Then present the "Consensus Forecast" for COVID cases over the next week (from Sunday to Saturday after the submission date). 
+```{r}
+# Forecasting for a specified period (e.g., 41 days from the end of the series)
+forecasted_values <- forecast(best_model, h=41) 
+# Plot the forecast
+plot(forecasted_values)
+print(forecasted_values)
+```
+# 4. Your HW score will be based on MAPE (Mean Absolute Percentage Errors) based on actual cases and your forecasts. The smaller the MAPE, the better the model. 
+```{r}
+
+# Define the range of p, d, and q
+p_values <- 1:3
+d_value <- 2
+q_values <- 1:3
+
+# Store models
+models <- list()
+
+# Iterate over all combinations of p, d, q
+for (p in p_values) {
+  for (q in q_values) {
+    model <- Arima(ct_ts, order = c(p, d_value, q))
+    model_name <- paste("ARIMA(", p, ",", d_value, ",", q, ")", sep = "")
+    models[[model_name]] <- model
+  }
+}
+
+# Print the summary of all models
+for (model_name in names(models)) {
+  cat("Model:", model_name, "\n")
+  print(summary(models[[model_name]]))
+  cat("\n")
+}
+
+
+
+# ARIMA(1,2,1): MAPE = 3.099501
+# ARIMA(1,2,2): MAPE = 3.279466
+# ARIMA(1,2,3): MAPE = 3.271208
+# ARIMA(2,2,1): MAPE = 3.310667
+# ARIMA(2,2,2): MAPE = 3.321913
+# ARIMA(2,2,3): MAPE = 3.25787
+# ARIMA(3,2,1): MAPE = 3.405724
+# ARIMA(3,2,2): MAPE = 3.384065
+# ARIMA(3,2,3): MAPE = 3.300773
+# Based on these values, the model with the lowest MAPE is:
+# 
+# ARIMA(1,2,1) with a MAPE of 3.099501
+# Therefore, the ARIMA(1,2,1) model is the best in terms of forecasting accuracy according to the MAPE criterion among the models listed. Remember, a lower MAPE value indicates a better fit of the model to the data
+
+```
+
+```{r}
+# Fit the best ARIMA model based on lowest MAPE -substitute order which the combination that gave the lowest MAPE
+
+best_model_MAPE <- Arima(ct_ts, order = c(1,2,1))
+# Forecasting for a specified period (e.g., 41 days from the end of the series)
+forecasted_values <- forecast(best_model_MAPE, h=41) 
+# Plot the forecast
+plot(forecasted_values)
+print(forecasted_values)
+```
